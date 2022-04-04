@@ -1,0 +1,148 @@
+\documentclass[a4paper, 11pt]{report}
+\usepackage{comment} % enables the use of multi-line comments (\ifx \fi) 
+\usepackage{lipsum} %This package just generates Lorem Ipsum filler text. 
+\usepackage{fullpage} % changes the margin
+\usepackage[a4paper, total={7in, 10in}]{geometry}
+\usepackage[fleqn]{amsmath}
+\usepackage{amssymb,amsthm}  % assumes amsmath package installed
+\newtheorem{theorem}{Theorem}
+\newtheorem{corollary}{Corollary}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{bm}
+\usetikzlibrary{arrows}
+\usepackage{verbatim}
+%\usepackage[numbered]{mcode}
+\usepackage{float}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows}
+\usetikzlibrary{arrows,calc,positioning}
+\usetikzlibrary{arrows.meta}
+\usepackage[
+backend=biber,
+style=ieee,
+sorting=none
+]{biblatex}
+\addbibresource{bibliography.bib}
+
+\tikzset{
+	block/.style = {draw, rectangle,
+		minimum height=1cm,
+		minimum width=1.5cm},
+	input/.style = {coordinate,node distance=1cm},
+	output/.style = {coordinate,node distance=4cm},
+	arrow/.style={draw, -latex,node distance=2cm},
+	pinstyle/.style = {pin edge={latex-, black,node distance=2cm}},
+	sum/.style = {draw, circle, node distance=1cm},
+}
+\usepackage{xcolor}
+\usepackage{mdframed}
+%\usepackage[shortlabels]{enumitem}
+\usepackage{enumitem}
+\usepackage{setspace} % for \onehalfspacing and \singlespacing macros
+\onehalfspacing 
+\usepackage{etoolbox}
+\AtBeginEnvironment{quote}{\par\singlespacing\small}
+%\usepackage{indentfirst}
+\setlength{\parindent}{4em}
+\setlength{\parskip}{1em}
+\allowdisplaybreaks
+\usepackage{hyperref}
+
+
+\renewcommand{\thesubsection}{\thesection.\alph{subsection}}
+
+
+\renewcommand{\qed}{\quad\qedsymbol}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{Inferring trader information stream classification using chain graphs}
+\author{Ted Watters}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+	Create a synthetic data set from an agent-based model using NetLogo. Then, conduct chain graph analysis to see how accurately we can infer the number of trader classification categories, and what their probabilities are, given observed trading activity and information streams. As a possible extra, run a Monte Carlo simulation using the chain grain and then compare the original synthetic data set to the Markov Chain Monte Carlo results.
+\end{abstract}
+\section{Outline/ Bibliography}
+\subsection{Progress Made and Planned}
+Due to illness, I've fallen behind schedule a little. However, I did have some margin of safety built in, and I can work over Spring Break. Besides an initial literature review, I've set up my project file structure, installed prerequisite software (NetLogo), reviewed Bayesian learning software packages, researched NetLogo ~\cite{netlogo} output data structure, and received model framework from my supervisor.
+
+
+\noindent Progress planned:
+\begin{itemize}
+\item End of Module 7 - Have NetLogo model fully updated
+\item End of Module 8 - Pseudo code for chain graph
+\item End of Module 9 - Have initial chain graph analysis complete, start mathematical analysis (Project approval due for Computational Statistics)
+\item End of Module 11 - Finish chain graph analysis, turn in 50 \%, start Markov Chain Monte Carlo portion
+\item Module 14 - Submit project
+\end{itemize}
+\subsection{Research}
+This project is inspired by Cont's market model~\cite{ghoulmie_cont_nadal_2005}. From the abstract:
+\begin{quote} 
+	We propose an agent-based model of a single-asset financial market, described in terms of a small number of parameters, which generates price returns with statistical properties similar to the stylized facts observed in financial time series... The parsimonious structure of the model allows the identification of feedback and heterogeneity as the key mechanisms leading to these effects. 
+\end{quote}
+Next, it has been shown in Epstein~\cite{epstein2007generative} \textit{Chapter 8: The Emergence of Class in a Multi-Agent Bargaining Model} that:
+\begin{quote}
+	...We have argued that various kinds of social orders— including segregated, discriminatory, and class systems— can also arise through the decentralized interactions of many agents in which accidents of history become reinforced over time. In these path-dependent dynamics, society may self-organize around distinctions that are quite arbitrary from an a priori standpoint. Above, initially meaningless “tags” acquire socially organizing salience: tag-based classes emerge.
+\end{quote}
+	So in a bargaining model, similar to the financial market, classes can arise from small changes to initial conditions. In this project, I'm seeking to change information stream sources for individual traders, and then see if classification of traders emerge. 
+	
+	The main purpose of this project is to see how we can use probabilistic graphical models to infer this class structure from trading activity. We expect this structure to be at least partially directed, and there are some variables that are impossible to measure (without having the underlying model I'm using to create the synthetic data set). 
+	
+	Our class text ~\cite{koller2009} also reviews learning causal models with latent variables in 21.7. While we haven't gotten there in the class, this section alludes to 3 chapters in the text which deal with learning the structure of Bayesian networks. I'll review those. Additionally, I signed up to audit the Coursera ~\cite{coursera} class, which has lectures that I can watch sooner than what's available on blackboard
+	
+	Another research area includes latent conditional random fields. Example articles include Sun's 2013 work~\cite{sun2013}:
+	\begin{quote}
+		 We propose a perceptron-style method, latent structured perceptron, for fast discriminative learning of structured classification with hidden information. We also give theoretical analysis and demonstrate good convergence properties of the proposed method. Our method extends the perceptron algorithm for the learning task with hidden information, which can be hardly captured by traditional models. It relies on Viterbi decoding over latent variables, combined with simple additive updates.
+	\end{quote}
+
+	The trading data generated by the agent based model will be sequential, so understanding how that relates to the conditional random field is important Examples include this work ~\cite{sun2022}
+	\begin{quote}
+		...we propose a new multiview discriminant model based on conditional random fields (CRFs) to model multiview sequential data, called multiview CRF. It inherits the advantages of CRFs that build a relationship between items in each sequence. Moreover, by introducing specific features designed on the CRFs for multiview data, the multiview CRF not only considers the relationship among different views but also captures the correlation between the features from the same view. Particularly, some features can be reused or divided into different views to build an appropriate size of feature space. This helps to avoid underfitting problems caused by too small feature space or overfitting problems caused by too large feature space. In order to handle large-scale data, we use the stochastic gradient method to speed up our model.
+	\end{quote}
+
+	And this work ~\cite{abramson2016}
+	
+	\begin{quote}
+		The claim of this paper is that CRF models
+		also provide discriminative models to distinguish between types
+		of sequence regardless of the accuracy of the labels obtained if
+		we calibrate the class membership estimate of the sequence. We
+		introduce and compare different neural network based linear-
+		chain CRFs and we present experiments on two complex sequence
+		classification and structured prediction tasks to support this
+		claim.
+	\end{quote}
+
+	And this work ~\cite{lafferty2001}
+	
+	\begin{quote}
+		We present conditional random fields, a framework for building probabilistic models to segment and label
+		sequence data. Conditional random fields offer several advantages over hidden Markov models and
+		stochastic grammars for such tasks, including the ability to relax strong independence assumptions
+		made in those models. Conditional random fields also avoid a fundamental limitation of maximum
+		entropy Markov models (MEMMs) and other discriminative Markov models based on directed graphical
+		models, which can be biased towards states with few successor states. We present iterative parameter
+		estimation algorithms for conditional random fields and compare the performance of the resulting
+		models to HMMs and MEMMs on synthetic and natural-language data.
+	\end{quote}
+
+	And possibly this work ~\cite{thai2018}:
+	
+	\begin{quote}
+		 Our model goes beyond the linear chain CRF to incorporate multiple hidden states per output label, but parametrizes their transitions parsimoniously with low-rank log-potential scoring matrices, effectively learning an embedding space for hidden states. This augmented latent space of inference variables complements the rich feature representation of the RNN, and allows exact global inference obeying complex, learned non-local output constraints. We experiment with several datasets and show that the model outperforms baseline CRF+RNN models when global output constraints are necessary at inference-time, and explore the interpretable latent structure. 
+	\end{quote}
+
+	And possibly this work ~\cite{neogi2019}:
+	
+	\begin{quote}
+		Conditional Random Fields (CRF) are frequently applied for labeling and segmenting sequence data. Morency et al. (2007) introduced hidden state variables in a labeled CRF structure in order to model the latent dynamics within class labels, thus improving the labeling performance. Such a model is known as Latent-Dynamic CRF (LDCRF). We present Factored LDCRF (FLDCRF), a structure that allows multiple latent dynamics of the class labels to interact with each other. Including such latent-dynamic interactions leads to improved labeling performance on single-label and multi-label sequence modeling tasks. We apply our FLDCRF models on two single-label (one nested cross-validation) and one multi-label sequence tagging (nested cross-validation) experiments across two different datasets - UCI gesture phase data and UCI opportunity data.
+	\end{quote}
+
+	Once I've gained a good understanding of different methodologies, I also need to make sure there are some existing software packages which I can leverage. Examples include R's crf ~\cite{ling2019}, bnlearn ~\cite{scutari2021}, rstan ~\cite{guo2021}, BiDAG ~\cite{suter2021}, and BDgraph ~\cite{mohammadi2021}.
+
+\printbibliography[title={Bibliography}]
+
+
+\end{document}          

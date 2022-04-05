@@ -1,6 +1,9 @@
 # pdf
 *.pdf
 
+# NetLogo Temporary Files
+*.tmp.nlogo
+
 # History files
 .Rhistory
 .Rapp.history

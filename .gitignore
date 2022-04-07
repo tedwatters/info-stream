@@ -1,5 +1,7 @@
-# pdf
+# data/ result files
 *.pdf
+*.csv
+*.png
 
 # NetLogo Temporary Files
 *.tmp.nlogo

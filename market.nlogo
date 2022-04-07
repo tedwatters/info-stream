@@ -26,6 +26,10 @@ set current-price  100
 create-traders num-traders [trader-setup]
 ask patches [set pcolor white]
 if write-output? [
+    file-delete "data/netlogo-results-trader.csv"
+    file-delete "data/netlogo-results-tick.csv"
+    file-delete "data/netlogo-results-assumptions.csv"
+
     ;; setup trader info file
     let states (map [x -> word x ", "] ([self] of traders))
     let return-traders ""
@@ -35,8 +39,14 @@ if write-output? [
     file-close-all
 
     ;; setup tick file
+    set states (map [x -> word x ".state, "] ([self] of traders))
+    set return-traders ""
+    foreach states [x -> set return-traders (word return-traders x)]
+    let threshold (map [x -> word x ".threshold, "] ([self] of traders))
+    let return-threshold ""
+    foreach threshold [x -> set return-threshold (word return-threshold x)]
     file-open "data/netlogo-results-tick.csv"
-    file-print (word "ticks" ", " "g" ", " "vol" ", " "current-reddit" ", " "current-info" ", " return-traders)
+    file-print (word "ticks" ", " "current-price"  ", " "g" ", " "vol" ", " "current-reddit" ", " "current-info" ", " return-traders return-threshold)
     file-close-all
 
 
@@ -45,20 +55,20 @@ if write-output? [
     let return-reddit ""
     foreach states [x -> set return-reddit (word return-reddit x)]
 
-    ;; row of whether or not they use reddit info-stream
-    set states (map [x -> word x ", "] ([my-threshold] of traders))
-    let return-threshold ""
-    foreach states [x -> set return-threshold (word return-threshold x)]
+;    ;; row of whether or not they use reddit info-stream
+;    set states (map [x -> word x ", "] ([my-threshold] of traders))
+;    let return-threshold ""
+;    foreach states [x -> set return-threshold (word return-threshold x)]
 
     file-open "data/netlogo-results-trader.csv"
     file-print return-reddit
-    file-print return-threshold
+;    file-print return-threshold
     file-close-all
 
     ;; csv of assumptions
     file-open "data/netlogo-results-assumptions.csv"
-    file-print("current-price, redditRatio, redditImportance, num-traders, lambda, d, %-change, maxTicks")
-    file-print(word current-price ", " redditRatio ", " redditImportance ", " num-traders ", " lamda ", " d ", " %-change ", " maxTicks)
+    file-print("redditRatio, redditImportance, num-traders, lambda, d, %-change, maxTicks")
+    file-print(word redditRatio ", " redditImportance ", " num-traders ", " lamda ", " d ", " %-change ", " maxTicks)
     file-close-all
 
     file-open "data/netlogo-results-tick.csv"
@@ -110,7 +120,7 @@ to create-information
 
     ifelse ticks > 500 and ticks < 1000
     [
-      set current-reddit random-normal 0.01 (d ^ 2)
+      set current-reddit random-normal 0.1 (d ^ 2)
       ;set current-info random-normal 0 (d ^ 2)
     ]
     [
@@ -121,7 +131,7 @@ to create-information
     ifelse ticks > 495 and ticks < 500
     [
       ;set current-reddit random-normal 0.01 (d ^ 2)
-      set current-info random-normal -0.01 (d ^ 2)
+      set current-info random-normal -0.1 (d ^ 2)
     ]
     [
       ;set current-reddit random-normal 0 (d ^ 2)
@@ -206,7 +216,13 @@ to do-output
   let states (map [x -> word x ", "][my-action] of traders)
   let return-states ""
   foreach states [x -> set return-states (word return-states x)]
-  file-print (word ticks ", " g ", " vol ", " current-reddit ", " current-info ", " return-states)
+
+  let thresh (map [x -> word x ", "][my-threshold] of traders)
+  let return-thresh ""
+  foreach thresh [x -> set return-thresh (word return-thresh x)]
+
+
+  file-print (word ticks "," current-price ", " g ", " vol ", " current-reddit ", " current-info ", " return-states return-thresh)
 end
 
 ;;;;;;;;;;;;;;;;;;;;;
@@ -330,7 +346,7 @@ d
 d
 0
 1
-0.001
+0.036
 .001
 1
 NIL
@@ -345,7 +361,7 @@ SLIDER
 %-change
 0
 1
-0.01
+0.2
 .01
 1
 NIL
@@ -414,7 +430,7 @@ lamda
 lamda
 0
 100
-10.0
+40.0
 1
 1
 NIL
@@ -543,7 +559,7 @@ redditImportance
 redditImportance
 0
 1
-0.01
+0.1
 .01
 1
 NIL

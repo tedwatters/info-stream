@@ -12,6 +12,7 @@
 \usepackage{bm}
 \usetikzlibrary{arrows}
 \usepackage{verbatim}
+\usepackage{listings}
 %\usepackage[numbered]{mcode}
 \usepackage{float}
 \usepackage{tikz}
@@ -61,23 +62,296 @@ sorting=none
 \begin{document}
 \maketitle
 
+
 \begin{abstract}
 	Create a synthetic data set from an agent-based model using NetLogo. Then, conduct chain graph analysis to see how accurately we can infer the number of trader classification categories, and what their probabilities are, given observed trading activity and information streams. As a possible extra, run a Monte Carlo simulation using the chain grain and then compare the original synthetic data set to the Markov Chain Monte Carlo results.
-\end{abstract}
-\section{Outline/ Bibliography}
-\subsection{Progress Made and Planned}
-Due to illness, I've fallen behind schedule a little. However, I did have some margin of safety built in, and I can work over Spring Break. Besides an initial literature review, I've set up my project file structure, installed prerequisite software (NetLogo), reviewed Bayesian learning software packages, researched NetLogo ~\cite{netlogo} output data structure, and received model framework from my supervisor.
+\end{abstract}\
+\tableofcontents
+\chapter{Introduction}
+\section{The Market}
+Consider the following agent-based market model, based on Cont's work~\cite{ghoulmie_cont_nadal_2005}. 
+
+\begin{quote}
+	Our model describes a market where a single asset, whose price is denoted by $p_{t}$ , is traded by
+	$N$ agents. Trading takes place at discrete periods $t = 0, 1, 2,\dots$. We will see that, provided
+	the parameters of the model are chosen in a certain range, we will be able to interpret these
+	periods as "trading days". At each period, agents have the possibility of sending an order to
+	the market for buying or selling a unit of asset: denoting by $\phi_{i}(t)$ the demand of the agent,
+	we have $\phi_{i}(t) = 1$ for a buy order and $\phi_{i}(t) = -1$. We allow the value $\phi_{i}(t)$ to be zero; the
+	agent is then inactive at period $t$. The inflow of public information is modeled by a sequence
+	of IID Gaussian random variables $(\epsilon_{t},t = 0, 1, 2,\dots)$ with $t \sim N(0, D^{2})$.
+\end{quote}
+Diverging from this paper, in the model of this market, consider two independent public information streams $\epsilon_{main,t}$ and $\epsilon_{reddit,t}$, rather than a single information stream $\epsilon_{t}$.
+\begin{quote}
+	The signal $\epsilon_{t}$ [or in this case, $\epsilon_{main,t}$ and $\epsilon_{reddit,t}$] is a forecast of
+	the future return $r_{t}$ and each agent has to decide whether the information conveyed by $\epsilon_{t}$ is
+	significant, in which case she will place a buy or sell an order according to the sign of$\epsilon_{t}$.
+\end{quote}
+\textbf{Updated needed to this section related to how threshold $\theta(t)$ varies with time, relative to current return.}
+\begin{quote}
+	The trading rule of each agent $i = 1,..., N$ is represented by a \dots decision
+	threshold [ $\theta_{i} \sim U(0,1)$]. The threshold [ $\theta_{i}$ ] can be viewed as the agent’s (subjective) view on volatility.
+	The trading rule we study may be seen as a stylized example of threshold behaviour: without
+	sufficient external stimulus [$(|\epsilon_{t}| \leq \theta_{i})$], an agent remains inactive $\phi_{i}(t) = 0$.
+\end{quote}
+In this case, since we have two information streams $\epsilon_{main,t}$ and $\epsilon_{reddit,t}$ we must define how an agent consumes them. Consider two classes of agents:
+\begin{itemize}
+	\item [$\rho_{i} = 0$] Consumes only main information stream
+	\item [$\rho_{i} = 1$] Consumes both the main and reddit information streams, with a single set importance factor $\alpha \in [0,1]$ determining the relative weight of each information stream to the agent's decision making. 
+\end{itemize}
+The class of each agent does not vary with time, and is randomly determined, based on a single set reddit proportion factor $\beta \in [0,1]$. Thus:
+\begin{equation}
+\phi_{i}(t) = \begin{cases}
+	1 & \rho_{i}=0,\epsilon_{main,t}>\theta_{i} \\
+	1 & \rho_{i}=1,(\beta \epsilon_{reddit,t} + (1-\beta)\epsilon_{main,t}) > \theta_{i}\\
+	0 & \rho_{i}=0, |\epsilon_{main,t}| \leq \theta_{i} \\
+	0 & \rho_{i}=1, |\beta \epsilon_{reddit,t} + (1-\beta)\epsilon_{main,t}| \leq \theta_{i} \\
+	-1 & \rho_{i}=0,\epsilon_{main,t}<\theta_{i} \\
+	-1 & \rho_{i}=1,(\beta \epsilon_{reddit,t} + (1-\beta)\epsilon_{main,t}) < \theta_{i}\\
+\end{cases}
+\end{equation}
+\begin{quote}
+	The excess demand is then given by $Z_{t} = \sum_{i=1}^{N} \phi_{i}(t)$
+\end{quote}
+In this market, consider asset price at time $t$ defined by:
+\begin{equation}
+	p_{t} = p_{t-1} \exp \left( \frac{ Z_{t}}{\lambda N}\right)
+\end{equation}
+Where the sum of trader actions $Z_{t}$ is clearly calculated before $p_{t}$, and $\lambda > 0$ is the normalized market depth such that $g'(0) = \frac{1}{\lambda}$. 
+
+Thus, the general procedure (after market initialization) at each step $t$ is:
+\begin{enumerate}
+	\item Each trader $i$ makes a buy/ no-action/ sell decision $\phi_{i}(t)$, which is a function of agent class $\rho_{i}$ and information stream $\epsilon_{main,t}$ (and possibly importance factor $\beta$ and $\epsilon_{reddit,t}$).
+	\item Price is updated based on previous price $p_{t-1}$, sum of trader actions $Z_{t}$, and 
+\end{enumerate}
+\section{The Agent Based Model}
+	Full code for the NetLogo~\cite{netlogo} (version 6.2.2) model is available at \url{https://github.com/tedwatters/info-stream/}. This repository is private for employer sensitivity reasons; however, please email \url{ted.watters@gmail.com} for access. Entire code file are included in the appendix \autoref{append:netlogo}, with snippets of interest in the main body of this report.
+	
+	The general procedure:
+	\begin{lstlisting}
+		to go
+			set z 0
+			set vol 0
+			create-information
+			ask traders [set done? false]
+			while [count traders with [not done?] > 0]
+			[ask traders [trade-2]]
+			calculate-price
+			calculate-return
+			set vol sum [abs my-action] of traders
+			;let t int (count traders * %-change)
+			ask n-of (count traders * %-change) traders [change-threshold]
+			if not write-output? [do-plots]
+			;ask traders [move-around]
+			if write-output? [do-output]
+			tick
+			if ticks > maxTicks [set write-output? false file-close-all stop]
+		end
+	\end{lstlisting}
+	
+	\noindent For the information streams, the main stream has information with a negative bias at ticks 495-500. Between 500-1,000, reddit information stream has a positive bias
+	
+	\begin{lstlisting}
+	to create-information
+		ifelse not newInfo?
+		[
+		ifelse paper?
+		;; paper case
+		[set current-info random-normal 0 (d ^ 2)
+		]
+		
+		[set current-info random-normal 0 d] ;; original line
+		]
+		[
+		;;set current-info current-info + first shuffle [1 -1 0]
+		;;set current-info random-normal 0 (d ^ 2)
+		
+		ifelse ticks > 500 and ticks < 1000
+		[
+		set current-reddit random-normal 0.1 (d ^ 2) 
+		;set current-info random-normal 0 (d ^ 2)
+		]
+		[
+		set current-reddit random-normal 0 (d ^ 2)
+		;set current-info random-normal 0 (d ^ 2)
+		]
+		
+		ifelse ticks > 495 and ticks < 500
+		[
+		;set current-reddit random-normal 0.01 (d ^ 2)
+		set current-info random-normal -0.01 (d ^ 2)
+		]
+		[
+		;set current-reddit random-normal 0 (d ^ 2)
+		set current-info random-normal 0 (d ^ 2)
+		]
+		
+		;;set current-reddit current-reddit + first shuffle [1 1 1 1 1 -1 -1 -1 -1 0 0 0 0 0 0 0 0 0 0]
+		]
+	end
+	\end{lstlisting}
+	
+	\noindent Trade decisions are made by:
+	\begin{lstlisting}
+	to trade-2
+		;; for now only looking at paper case
+		ifelse useBothFeeds? and myRedditUser
+		[
+		ifelse ((redditImportance * current-reddit) + ((1 - redditImportance) * current-info)) < (-1 * my-threshold) or ((redditImportance * current-reddit) + ((1 - redditImportance) * current-info)) > my-threshold
+		[
+		ifelse ((redditImportance * current-reddit) + ((1 - redditImportance) * current-info)) > 0
+		[set my-action 1 set z z + 1][set my-action -1 set z z - 1]
+		]
+		[set my-action 0]
+		]
+		[
+		;; paper case
+		ifelse current-info < (-1 * my-threshold) or current-info > my-threshold
+		[
+		ifelse current-info > 0
+		[set my-action 1 set z z + 1][set my-action -1 set z z - 1]
+		]
+		[set my-action 0]
+		]
+		set done? true
+	end
+	\end{lstlisting}
+	
+	And to calculate the updated price:
+	\begin{lstlisting}
+	to calculate-price
+		set previous-price current-price
+		;;set current-price sum [my-action] of traders
+		set g ((z / (count traders)) / lamda)  ;; this is correct
+		;; g is the price impact function which is a positive functin?
+		;; ln ( p_t / p_{t-1 } ) = g -> e^g * p_{t-1} = p(t) ?
+		set current-price exp g * previous-price
+	end
+	\end{lstlisting}
+	
+	This model produces a time series that includes:
+	\begin{itemize}
+		\item $phi_{i}(t)$, trader $i$ buy/ no-action/ sell
+		\item $\sum_{i=1}^{N} | \phi_{i}(t) |$, the volume of traders wanting to trade
+		\item $Z_{t}$, excess demand
+		\item $p_{t}$, price
+		\item $\epsilon_{main,t}$ and $\epsilon_{reddit,t}$, the info streams
+	\end{itemize}
+
+	For example, see ~\autoref{ex_price}, ~\autoref{ex_vol}, and ~\autoref{ex_info}.
+\begin{figure}[h!]
+	\caption{Current Price}
+	\label{ex_price}
+	\includegraphics[width=\textwidth]{../plots/ex_price.png}
+\end{figure}
+
+\begin{figure}[h!]
+	\caption{Volume}
+	\label{ex_vol}
+	\includegraphics[width=\textwidth]{../plots/ex_vol.png}
+\end{figure}
+
+\begin{figure}[h!]
+	\caption{Info Streams}
+	\label{ex_info}
+	\includegraphics[width=\textwidth]{../plots/ex_info.png}
+\end{figure}
+
+\chapter{Bayesian Inference}	
+\section{The Template Model}
+This agent based model can be represented by a template chain graph shown in ~\autoref{chain_graph}. \textbf{Need to update representation of $\theta_{i}(t)$}. In this case, there are two main template groups. The first contains node specific to an agent $i$, and the second refers to nodes specific to time $t$. The gray nodes represent latent variables that we cannot observe, whereas the transparent nodes are ones we can observe. 
+
+\begin{figure}[h]
+	\centering
+	\begin{tikzpicture}[
+	squarednode/.style={rectangle, draw=black!60, fill=black!5, very thick, minimum size=7mm},
+	resultnode/.style={rectangle, draw=black!60, very thick, minimum size=7mm},	
+	scale = 0.2
+	]
+	%Nodes
+	\node[squarednode, align=center]      (lambda)                              {$\lambda$};	
+	\node[squarednode, align=center]      (importance)     [right=of lambda]                        {$\beta$};
+	\node[squarednode, align=center]      (proportion)     [left=of lambda]                          {$\alpha$};		
+	\node[resultnode, align=center]        (price)       [below=of lambda] {$p_{t}$};		
+	\node[resultnode, align=center]        (action)       [below =of price] {$\phi_{i}(t)$};				
+	\node[squarednode, align=center]        (class)       [left=of action] {$\rho_{i}$};
+	\node[resultnode, align=center]        (main)       [right=of price] {$\epsilon_{main,t}$};				
+	\node[resultnode, align=center]        (reddit)       [right=of main] {$\epsilon_{reddit,t}$};
+	\node[squarednode, align=center]      (threshold)     [below=of reddit]      {$\theta_{i}(t)$};					
+%	%Lines
+	\draw[-{Latex[width=3mm]}] (importance.south) -- (action.north);
+	\draw[-{Latex[width=3mm]}] (proportion.south) -- (class.north) ;
+	\draw[-{Latex[width=3mm]}] (class.east) -- (action.west);
+	\draw[-{Latex[width=3mm]}] (main.west) -- (action.east);
+	\draw[-{Latex[width=3mm]}] (reddit.south) -- (action.east);
+	\draw[-{Latex[width=3mm]}] (lambda.south) -- (price.north);
+	\draw[-{Latex[width=3mm]}] (threshold.west) -- (action.east);
+	\draw[-{Latex[width=3mm]}] (action.north) -- (price.south);
+	\draw [->] (price.90) arc (0:264:20mm);
+%	%rectangle
+	\draw[red,thick,dotted] ($(price.north west)+(-1,2)$)  rectangle ($(threshold.south east)+(1,-6)$);
+	\draw[blue,thick,dotted] ($(class.north west)+(-4,4)$)  rectangle ($(threshold.south east)+(4,-8)$);
+
+	\end{tikzpicture}\\
+	\caption{Template Chain Graph}
+	\label{chain_graph}
+\end{figure}
+
+Our primary objectives are to accurately estimate $\alpha \in [0,1]$, $\lambda >0$, and $\beta \in [0,1]$ only given $p_{t}$, $\epsilon_{main,t}$, $\epsilon_{reddit,t}$, and $\phi_{i}(t)$.
+
+\section{Inference Approach - Pseudo Code}
+
+One library in R that looks suitable is \url{https://cran.r-project.org/web/packages/causact/causact.pdf}. Example code to build plate model:
+\begin{lstlisting}[language=R]
+library(dplyr)
+library(greta)
+library(causact)
+graph = dag_create() %>%
+	dag_node("Get Card","y",
+		rhs = bernoulli(theta),
+		data = carModelDF$getCard) %>%
+	dag_node(descr = "Card Probability by Car",label = "theta",
+		rhs = beta(2,2),
+		child = "y") %>%
+	dag_node("Car Model","x",
+		data = carModelDF$carModel,
+		child = "y") %>%
+	dag_plate("Car Model","x",
+		data = carModelDF$carModel,
+		nodeLabels = "theta")
+graph %>% dag_render()
+gretaCode = graph %>% dag_greta(mcmc=FALSE)
+## Not run:
+## default functionality returns a data frame
+# below requires Tensorflow installation
+drawsDF = graph %>% dag_greta()
+drawsDF %>% dagp_plot()
+\end{lstlisting}
+I've got this example to run and create useable visualizations, but it will take quite a bit of work to get the more complex plate model built and trying to run it.
+\begin{figure}[h!]
+	\caption{Example Code - Plate Graph}
+	\label{ex_info}
+	\includegraphics[width=\textwidth]{../plots/ex_graph.png}
+\end{figure}
+
+\begin{figure}[h!]
+	\caption{Example Code - Parameter Estimate}
+	\label{ex_info}
+	\includegraphics[width=\textwidth]{../plots/ex_est.png}
+\end{figure}
+
+\chapter{Progress Planned}
+
 
 
 \noindent Progress planned:
+\section{Steps}
 \begin{itemize}
-\item End of Module 7 - Have NetLogo model fully updated
-\item End of Module 8 - Pseudo code for chain graph
 \item End of Module 9 - Have initial chain graph analysis complete, start mathematical analysis (Project approval due for Computational Statistics)
 \item End of Module 11 - Finish chain graph analysis, turn in 50 \%, start Markov Chain Monte Carlo portion
 \item Module 14 - Submit project
 \end{itemize}
-\subsection{Research}
+\section{Supporting Research}
 This project is inspired by Cont's market model~\cite{ghoulmie_cont_nadal_2005}. From the abstract:
 \begin{quote} 
 	We propose an agent-based model of a single-asset financial market, described in terms of a small number of parameters, which generates price returns with statistical properties similar to the stylized facts observed in financial time series... The parsimonious structure of the model allows the identification of feedback and heterogeneity as the key mechanisms leading to these effects. 
@@ -142,7 +416,13 @@ Next, it has been shown in Epstein~\cite{epstein2007generative} \textit{Chapter 
 
 	Once I've gained a good understanding of different methodologies, I also need to make sure there are some existing software packages which I can leverage. Examples include R's crf ~\cite{ling2019}, bnlearn ~\cite{scutari2021}, rstan ~\cite{guo2021}, BiDAG ~\cite{suter2021}, and BDgraph ~\cite{mohammadi2021}.
 
-\printbibliography[title={Bibliography}]
+\chapter*{Bibliography}
+\printbibliography
 
+\chapter*{Appendix}
+\section*{NetLogo Code}
+\label{append:netlogo}
+\lstinputlisting{../market.nlogo}
+	
 
 \end{document}          

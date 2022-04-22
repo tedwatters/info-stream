@@ -179,7 +179,7 @@ for (itr in seq(1:length(file_names))){
   if (itr == 1){
     graph %>% dag_render() %>%
       export_svg %>% charToRaw %>% 
-      rsvg_png(paste0("./plots/graph_",scenario_name,".png"))
+      rsvg_png(paste0("./plots/graph",scenario_name,".png"))
     # png(file=paste0("./plots/graph_",scenario_name,".png"))
     # dag_render(graph = graph)
     # dev.off()
@@ -190,13 +190,13 @@ for (itr in seq(1:length(file_names))){
   drawsDF = graph %>% dag_greta()
   
   # png(file=paste0("./plots/param_est_",scenario_name,".png"))
-  drawsDF %>% dagp_plot()
-  +ggtitle(paste("Parameter Estimate: ",scenario_name))
-  ggsave(paste0("./plots/param_est_",scenario_name,".png"))
+  plot_p <- drawsDF %>% dagp_plot() 
+  plot_p$labels$title <- paste("Parameter Estimate: ",scenario_name)
+  ggsave(paste0("./plots/paramEst",scenario_name,".png"))
   # dagp_plot(drawsDF = drawsDF)
   # dev.off()
   
-  write.csv(drawsDF,paste0('./plots/drawsDF_',scenario_name,'.csv'))
+  write.csv(drawsDF,paste0('./plots/drawsDF',scenario_name,'.csv'))
 }
 
 

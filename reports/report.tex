@@ -2,6 +2,7 @@
 \usepackage{comment} % enables the use of multi-line comments (\ifx \fi) 
 \usepackage{lipsum} %This package just generates Lorem Ipsum filler text. 
 \usepackage{fullpage} % changes the margin
+\usepackage[section]{placeins}
 \usepackage[a4paper, total={7in, 10in}]{geometry}
 \usepackage[fleqn]{amsmath}
 \usepackage{amssymb,amsthm}  % assumes amsmath package installed
@@ -9,6 +10,8 @@
 \newtheorem{corollary}{Corollary}
 \usepackage{graphicx}
 \usepackage{grffile}
+\usepackage[maxfloats=256]{morefloats}
+\maxdeadcycles=1000
 \usepackage{tikz}
 \usepackage{bm}
 \usetikzlibrary{arrows}
@@ -243,19 +246,19 @@ Thus, the general procedure (after market initialization) at each step $t$ is:
 \begin{figure}[h!]
 	\caption{Current Price}
 	\label{ex_price}
-	\includegraphics[width=\textwidth]{../plots/ex_price.png}
+	\includegraphics[width=\textwidth]{../plots/priceRR0-RI0.1.png}
 \end{figure}
 
 \begin{figure}[h!]
 	\caption{Volume}
 	\label{ex_vol}
-	\includegraphics[width=\textwidth]{../plots/ex_vol.png}
+	\includegraphics[width=\textwidth]{../plots/volRR0-RI0.1.png}
 \end{figure}
 
 \begin{figure}[h!]
 	\caption{Info Streams}
 	\label{ex_info}
-	\includegraphics[width=\textwidth]{../plots/ex_info.png}
+	\includegraphics[width=\textwidth]{../plots/infoRR0-RI0.1.png}
 \end{figure}
 
 \chapter{Bayesian Inference}	
@@ -300,46 +303,116 @@ This agent based model can be represented by a template chain graph shown in ~\a
 
 Our primary objectives are to accurately estimate $\alpha \in [0,1]$, $\lambda >0$, and $\beta \in [0,1]$ only given $p_{t}$, $\epsilon_{main,t}$, $\epsilon_{reddit,t}$, and $\phi_{i}(t)$.
 
-\section{Inference Approach - Pseudo Code}
+\section{Inference Approach}
 
-One library in R that looks suitable is \url{https://cran.r-project.org/web/packages/causact/causact.pdf}. Example code to build plate model:
+After transforming the data generated from the agent based model into a format that can be used for this analysis (code available in ~\autoref{append:r}), a graph representation can be created. One of the struggles here is that for the causact package, it does Bayesian inference using the greta package, which in turn uses a Hamilton Monte Carlo algorithm. Unfortunately, it cannot directly do inference on discrete random variables, which we would like to do for $\rho_{i}$. Since the parameter we really care about is $\alpha$, we can adjust $\rho_{i}$ and the decision making equation in $\phi_{i}(t)$ to work with a modified continuous $\rho_{i}$. In this case, the $\alpha$ that we are looking at ranges from $[0,0.5]$, so when interpreting the model's parameter estimates we need to multiply by a factor of 2 to get the actual $\alpha$
 \begin{lstlisting}[language=R]
-library(dplyr)
-library(greta)
-library(causact)
-graph = dag_create() %>%
-	dag_node("Get Card","y",
-		rhs = bernoulli(theta),
-		data = carModelDF$getCard) %>%
-	dag_node(descr = "Card Probability by Car",label = "theta",
-		rhs = beta(2,2),
-		child = "y") %>%
-	dag_node("Car Model","x",
-		data = carModelDF$carModel,
-		child = "y") %>%
-	dag_plate("Car Model","x",
-		data = carModelDF$carModel,
-		nodeLabels = "theta")
-graph %>% dag_render()
-gretaCode = graph %>% dag_greta(mcmc=FALSE)
-## Not run:
-## default functionality returns a data frame
-# below requires Tensorflow installation
-drawsDF = graph %>% dag_greta()
-drawsDF %>% dagp_plot()
+  # make the graph
+	graph = dag_create() %>%
+		dag_node("Decision","phi_o",
+			rhs = uniform(-1,1),
+			# rhs = uniform(phi[tp,ip]-0.1,phi[tp,ip]+0.1),
+			data = trader_tick_phi,
+			keepAsDF = TRUE
+			) %>%
+		dag_node("Trader Decision","phi",
+			rhs = decision_function(rho[ip],betar,epsilon_reddit[tp],epsilon_main[tp],theta[ip]),
+			# rhs = uniform(-1,1),
+			# data = trader_decisions$value,
+			dec = TRUE,
+			child = "phi_o") %>%
+		dag_node(descr = "Trader Classification",label = "rho",
+			rhs = alpha+z,
+			child = "phi") %>%
+			dag_node(descr = "Proportion of Reddit Traders",label = "alpha",
+			rhs = uniform(0,0.5),
+			child = "rho") %>%
+		dag_node(descr = "Trader Threshold", label = "theta",
+			rhs = beta(2,2),
+			child = "phi") %>%
+			dag_node(descr =  "Reddit Importance Factor",label = "betar",
+			rhs = uniform(0,1),
+			child = "phi") %>%
+		dag_node("Info Main","epsilon_main",
+			data = trader_decisions$current.info,
+			child = "phi") %>%
+		dag_node("Info Reddit","epsilon_reddit",
+			data = trader_decisions$current.reddit,
+			child = "phi") %>%
+		dag_node("Tick","t",
+			data = trader_decisions$ticks,
+			child="phi") %>%
+		dag_node("Trader","i",
+			data = as.numeric(trader_decisions$variable),
+			child="phi") %>%
+		dag_node("Rho_cut","z",
+			rhs = uniform(0,0.5),
+			child="rho") %>%
+		dag_plate("Trader","ip",
+			nodeLabels = c("rho","theta","i","phi","phi_o","z"),
+			data = trader_decisions$variable) %>%
+		dag_plate("Tick Plate","tp",
+			nodeLabels = c("epsilon_reddit","epsilon_main","t","phi","phi_o"),
+			data = trader_decisions$tick)
 \end{lstlisting}
-I've got this example to run and create useable visualizations, but it will take quite a bit of work to get the more complex plate model built and trying to run it.
+This code generates the following graphical representation ~\autoref{ex_graph}.
 \begin{figure}[h!]
-	\caption{Example Code - Plate Graph}
-	\label{ex_info}
-	\includegraphics[width=\textwidth]{../plots/ex_graph.png}
+	\caption{Plate Graph}
+	\label{ex_graph}
+	\includegraphics[width=\textwidth]{../plots/graphRR0-RI0.1.png}
 \end{figure}
 
+Dark green nodes are observed, and the square node is a decision node
+
+
+Running the inference itself is straightforward.
+
+\begin{lstlisting}[language=R]
+ 	 gretaCode = graph %>% dag_greta(mcmc=FALSE)
+	drawsDF = graph %>% dag_greta()
+\end{lstlisting}
+
+The greta code line generates the following code, which could be run separately as desired, but gives more insight into the model itself
+
+\begin{lstlisting}[language=R]
+## The below greta code will return a posterior distribution 
+## for the given DAG. Either copy and paste this code to use greta
+## directly, evaluate the output object using 'eval', or 
+## or (preferably) use dag_greta(mcmc=TRUE) to return a data frame of
+## the posterior distribution: 
+epsilon_main <- as_data(trader_decisions$current.info)       #DATA
+epsilon_reddit <- as_data(trader_decisions$current.reddit)   #DATA
+t <- as_data(trader_decisions$ticks)                         #DATA
+i <- as_data(as.numeric(trader_decisions$variable))          #DATA
+phi_o <- as_data(trader_tick_phi)                            #DATA
+ip     <- as.factor(trader_decisions$variable)   #DIM
+tp     <- as.factor(trader_decisions$tick)   #DIM
+ip_dim <- length(unique(ip))   #DIM
+tp_dim <- length(unique(tp))   #DIM
+alpha  <- uniform(min = 0, max = 0.5)                  #PRIOR
+theta  <- beta(shape1 = 2, shape2 = 2, dim = ip_dim)   #PRIOR
+betar  <- uniform(min = 0, max = 1)                    #PRIOR
+z      <- uniform(min = 0, max = 0.5, dim = ip_dim)    #PRIOR
+rho    <- alpha + z                                                                                                            #OPERATION
+phi    <- decision_function(rho = rho[ip], betar = betar, er = epsilon_reddit[tp], em = epsilon_main[tp], theta = theta[ip])   #OPERATION
+distribution(phi_o) <- uniform(min = -1, max = 1, dim = c(ip_dim,tp_dim))   #LIKELIHOOD
+gretaModel  <- model(alpha,theta,betar,z)   #MODEL
+meaningfulLabels(graph)
+draws       <- mcmc(gretaModel)              #POSTERIOR
+drawsDF     <- replaceLabels(draws) %>% as.matrix() %>%
+dplyr::as_tibble()           #POSTERIOR
+tidyDrawsDF <- drawsDF %>% addPriorGroups()  #POSTERIOR
+\end{lstlisting}
+
+This code then outputs confidence intervals for each parameter ~\autoref{ex_paramEst}. Of interest are the "alpha" and "betar" parameters.
+
 \begin{figure}[h!]
-	\caption{Example Code - Parameter Estimate}
-	\label{ex_info}
-	\includegraphics[width=\textwidth]{../plots/ex_est.png}
+	\caption{Parameter Estimate}
+	\label{ex_paramEst}
+	\includegraphics[width=\textwidth]{../plots/paramEstRR0-RI0.1.png}
 \end{figure}
+
+In the appendix, I've included data from multiple runs. In particular, we can notice that with the particular parameters set, only larger $\beta$ and $\alpha$ values generate large differences in pricing away from the baseline. This in turn makes the parameter estimates relatively similar across data runs, and makes the confidence for estimating $\alpha$ and $\beta$ lower. 
 
 \chapter{Progress Planned}
 
@@ -348,9 +421,9 @@ I've got this example to run and create useable visualizations, but it will take
 \noindent Progress planned:
 \section{Steps}
 \begin{itemize}
-\item End of Module 9 - Have initial chain graph analysis complete, start mathematical analysis (Project approval due for Computational Statistics)
-\item End of Module 11 - Finish chain graph analysis, turn in 50 \%, start Markov Chain Monte Carlo portion
-\item Module 14 - Submit project
+\item Quality check inference
+\item Create Monte Carlo generated time series from graph, and compare to original time series (bulk properties, such as mean, variance, autocorrelation, etc.)
+\item Clean up report section, including adding mathematical detail about how I transformed $\rho_{i}$ to be continuous and why I needed to.
 \end{itemize}
 \section{Supporting Research}
 This project is inspired by Cont's market model~\cite{ghoulmie_cont_nadal_2005}. From the abstract:
@@ -420,96 +493,88 @@ Next, it has been shown in Epstein~\cite{epstein2007generative} \textit{Chapter 
 \chapter*{Bibliography}
 \printbibliography
 
-\chapter*{Appendix}
-\section*{Parameter Estimates}
-%for f in ./plots/*.png; do echo "\\includegraphics[width=0.9\\linewidth]{.$f}\\\\"; done;
+\chapter{Appendix}
+\section{Graph}
+%"for f in ./plots/*.png; do echo $( printf "\\\begin{figure}[h] \n\\caption{File: .$f} \n \\includegraphics[width=\\\textwidth]{.$f} \n \\\end{figure} \n"); done;"
 
-\includegraphics[width=0.9\linewidth]{../plots/graph_RR0-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/graph_RR0-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/graph_RR0-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/graph_RR0-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.05-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.05-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.05-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.05-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.05-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.1-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.1-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.1-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.1-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.1-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.3-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.3-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.3-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.3-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.3-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.6-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.6-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.6-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.6-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0.6-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/infoRR0-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/param_est_RR0-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/param_est_RR0-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/param_est_RR0-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.05-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.05-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.05-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.05-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.05-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.1-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.1-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.1-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.1-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.1-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.3-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.3-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.3-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.3-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.3-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.6-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.6-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.6-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.6-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0.6-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/priceRR0-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.05-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.05-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.05-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.05-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.05-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.1-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.1-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.1-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.1-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.1-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.3-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.3-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.3-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.3-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.3-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.6-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.6-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.6-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.6-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0.6-RI0.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0-RI0.1.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0-RI0.3.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0-RI0.5.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0-RI0.7.png}\\
-\includegraphics[width=0.9\linewidth]{../plots/volRR0-RI0.png}\\
+\begin{figure}[h] \caption{File: ../plots/graphRR0-RI0.1.png} \includegraphics[width=\textwidth]{../plots/graphRR0-RI0.1.png} \end{figure}
+\section{Info Stream}
+\begin{figure}[h] \caption{File: ../plots/infoRR0-RI0.1.png} \includegraphics[width=\textwidth]{../plots/infoRR0-RI0.1.png} \end{figure}
+\section{Parameter Estimates}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.05-RI0.1.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.05-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.05-RI0.3.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.05-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.05-RI0.5.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.05-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.05-RI0.7.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.05-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.05-RI0.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.05-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.1-RI0.1.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.1-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.1-RI0.3.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.1-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.1-RI0.5.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.1-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.1-RI0.7.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.1-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0.1-RI0.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0.1-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0-RI0.1.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0-RI0.3.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0-RI0.5.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0-RI0.7.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/paramEstRR0-RI0.png} \includegraphics[width=\textwidth]{../plots/paramEstRR0-RI0.png} \end{figure}
+\section{Price Data}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.05-RI0.1.png} \includegraphics[width=\textwidth]{../plots/priceRR0.05-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.05-RI0.3.png} \includegraphics[width=\textwidth]{../plots/priceRR0.05-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.05-RI0.5.png} \includegraphics[width=\textwidth]{../plots/priceRR0.05-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.05-RI0.7.png} \includegraphics[width=\textwidth]{../plots/priceRR0.05-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.05-RI0.png} \includegraphics[width=\textwidth]{../plots/priceRR0.05-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.1-RI0.1.png} \includegraphics[width=\textwidth]{../plots/priceRR0.1-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.1-RI0.3.png} \includegraphics[width=\textwidth]{../plots/priceRR0.1-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.1-RI0.5.png} \includegraphics[width=\textwidth]{../plots/priceRR0.1-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.1-RI0.7.png} \includegraphics[width=\textwidth]{../plots/priceRR0.1-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.1-RI0.png} \includegraphics[width=\textwidth]{../plots/priceRR0.1-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.3-RI0.1.png} \includegraphics[width=\textwidth]{../plots/priceRR0.3-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.3-RI0.3.png} \includegraphics[width=\textwidth]{../plots/priceRR0.3-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.3-RI0.5.png} \includegraphics[width=\textwidth]{../plots/priceRR0.3-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.3-RI0.7.png} \includegraphics[width=\textwidth]{../plots/priceRR0.3-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.3-RI0.png} \includegraphics[width=\textwidth]{../plots/priceRR0.3-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.6-RI0.1.png} \includegraphics[width=\textwidth]{../plots/priceRR0.6-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.6-RI0.3.png} \includegraphics[width=\textwidth]{../plots/priceRR0.6-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.6-RI0.5.png} \includegraphics[width=\textwidth]{../plots/priceRR0.6-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.6-RI0.7.png} \includegraphics[width=\textwidth]{../plots/priceRR0.6-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0.6-RI0.png} \includegraphics[width=\textwidth]{../plots/priceRR0.6-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0-RI0.1.png} \includegraphics[width=\textwidth]{../plots/priceRR0-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0-RI0.3.png} \includegraphics[width=\textwidth]{../plots/priceRR0-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0-RI0.5.png} \includegraphics[width=\textwidth]{../plots/priceRR0-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0-RI0.7.png} \includegraphics[width=\textwidth]{../plots/priceRR0-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/priceRR0-RI0.png} \includegraphics[width=\textwidth]{../plots/priceRR0-RI0.png} \end{figure}
+\section{Volume Data}
+\begin{figure}[h] \caption{File: ../plots/volRR0.05-RI0.1.png} \includegraphics[width=\textwidth]{../plots/volRR0.05-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.05-RI0.3.png} \includegraphics[width=\textwidth]{../plots/volRR0.05-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.05-RI0.5.png} \includegraphics[width=\textwidth]{../plots/volRR0.05-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.05-RI0.7.png} \includegraphics[width=\textwidth]{../plots/volRR0.05-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.05-RI0.png} \includegraphics[width=\textwidth]{../plots/volRR0.05-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.1-RI0.1.png} \includegraphics[width=\textwidth]{../plots/volRR0.1-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.1-RI0.3.png} \includegraphics[width=\textwidth]{../plots/volRR0.1-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.1-RI0.5.png} \includegraphics[width=\textwidth]{../plots/volRR0.1-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.1-RI0.7.png} \includegraphics[width=\textwidth]{../plots/volRR0.1-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.1-RI0.png} \includegraphics[width=\textwidth]{../plots/volRR0.1-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.3-RI0.1.png} \includegraphics[width=\textwidth]{../plots/volRR0.3-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.3-RI0.3.png} \includegraphics[width=\textwidth]{../plots/volRR0.3-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.3-RI0.5.png} \includegraphics[width=\textwidth]{../plots/volRR0.3-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.3-RI0.7.png} \includegraphics[width=\textwidth]{../plots/volRR0.3-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.3-RI0.png} \includegraphics[width=\textwidth]{../plots/volRR0.3-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.6-RI0.1.png} \includegraphics[width=\textwidth]{../plots/volRR0.6-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.6-RI0.3.png} \includegraphics[width=\textwidth]{../plots/volRR0.6-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.6-RI0.5.png} \includegraphics[width=\textwidth]{../plots/volRR0.6-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.6-RI0.7.png} \includegraphics[width=\textwidth]{../plots/volRR0.6-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0.6-RI0.png} \includegraphics[width=\textwidth]{../plots/volRR0.6-RI0.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0-RI0.1.png} \includegraphics[width=\textwidth]{../plots/volRR0-RI0.1.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0-RI0.3.png} \includegraphics[width=\textwidth]{../plots/volRR0-RI0.3.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0-RI0.5.png} \includegraphics[width=\textwidth]{../plots/volRR0-RI0.5.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0-RI0.7.png} \includegraphics[width=\textwidth]{../plots/volRR0-RI0.7.png} \end{figure}
+\begin{figure}[h] \caption{File: ../plots/volRR0-RI0.png} \includegraphics[width=\textwidth]{../plots/volRR0-RI0.png} \end{figure}
 
 
 
-\section*{NetLogo Code}
+\section{R Code}[language=r]
+\label{append:r}
+\lstinputlisting{../chaingraph.R}
+\section{NetLogo Code}
 \label{append:netlogo}
 \lstinputlisting{../market.nlogo}
 	

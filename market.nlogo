@@ -26,15 +26,15 @@ set current-price  100
 create-traders num-traders [trader-setup]
 ask patches [set pcolor white]
 if write-output? [
-    file-delete "data/netlogo-results-trader.csv"
-    file-delete "data/netlogo-results-tick.csv"
-    file-delete "data/netlogo-results-assumptions.csv"
+    carefully [file-delete (word "data/netlogo-results-trader-RR" redditRatio "-RI" redditImportance ".csv")] []
+    carefully [file-delete (word "data/netlogo-results-tick-RR" redditRatio "-RI" redditImportance ".csv")] []
+    carefully [file-delete (word "data/netlogo-results-assumptions-RR" redditRatio "-RI" redditImportance ".csv")] []
 
     ;; setup trader info file
     let states (map [x -> word x ", "] ([self] of traders))
     let return-traders ""
     foreach states [x -> set return-traders (word return-traders x)]
-    file-open "data/netlogo-results-trader.csv"
+    file-open (word "data/netlogo-results-trader-RR" redditRatio "-RI" redditImportance ".csv")
     file-print return-traders
     file-close-all
 
@@ -45,7 +45,7 @@ if write-output? [
     let threshold (map [x -> word x ".threshold, "] ([self] of traders))
     let return-threshold ""
     foreach threshold [x -> set return-threshold (word return-threshold x)]
-    file-open "data/netlogo-results-tick.csv"
+    file-open (word "data/netlogo-results-tick-RR" redditRatio "-RI" redditImportance ".csv")
     file-print (word "ticks" ", " "current-price"  ", " "g" ", " "vol" ", " "current-reddit" ", " "current-info" ", " return-traders return-threshold)
     file-close-all
 
@@ -60,18 +60,18 @@ if write-output? [
 ;    let return-threshold ""
 ;    foreach states [x -> set return-threshold (word return-threshold x)]
 
-    file-open "data/netlogo-results-trader.csv"
+    file-open (word "data/netlogo-results-trader-RR" redditRatio "-RI" redditImportance ".csv")
     file-print return-reddit
 ;    file-print return-threshold
     file-close-all
 
     ;; csv of assumptions
-    file-open "data/netlogo-results-assumptions.csv"
+    file-open (word "data/netlogo-results-assumptions-RR" redditRatio "-RI" redditImportance ".csv")
     file-print("redditRatio, redditImportance, num-traders, lambda, d, %-change, maxTicks")
     file-print(word redditRatio ", " redditImportance ", " num-traders ", " lamda ", " d ", " %-change ", " maxTicks)
     file-close-all
 
-    file-open "data/netlogo-results-tick.csv"
+    file-open (word "data/netlogo-results-tick-RR" redditRatio "-RI" redditImportance ".csv")
 
 
   ]
@@ -96,7 +96,7 @@ to go
   calculate-return
   set vol sum [abs my-action] of traders
   ;let t int (count traders * %-change)
-  ask n-of (count traders * %-change) traders [change-threshold]
+;  ask n-of (count traders * %-change) traders [change-threshold]
   if not write-output? [do-plots]
   ;ask traders [move-around]
   if write-output? [do-output]
@@ -115,30 +115,46 @@ to create-information
     [set current-info random-normal 0 d] ;; original line
   ]
   [
-    ;;set current-info current-info + first shuffle [1 -1 0]
-    ;;set current-info random-normal 0 (d ^ 2)
-
-    ifelse ticks > 500 and ticks < 1000
-    [
-      set current-reddit random-normal 0.1 (d ^ 2)
-      ;set current-info random-normal 0 (d ^ 2)
-    ]
+    ifelse ticks < 2
     [
       set current-reddit random-normal 0 (d ^ 2)
-      ;set current-info random-normal 0 (d ^ 2)
-    ]
-
-    ifelse ticks > 495 and ticks < 500
-    [
-      ;set current-reddit random-normal 0.01 (d ^ 2)
-      set current-info random-normal -0.1 (d ^ 2)
-    ]
-    [
-      ;set current-reddit random-normal 0 (d ^ 2)
       set current-info random-normal 0 (d ^ 2)
     ]
+    [
+      set current-reddit max list (min list (current-reddit - 0.3 * current-info + random-normal 0 (d ^ 2)) (d * 2)) (d * -0.3)
+      ifelse abs(current-info) > (d * 1.2)
+      [
+        set current-info -0.01
+      ]
+      [
+        set current-info current-info + random-normal 0 (d ^ 2)
+      ]
+    ]
 
-    ;;set current-reddit current-reddit + first shuffle [1 1 1 1 1 -1 -1 -1 -1 0 0 0 0 0 0 0 0 0 0]
+;    ;;set current-info current-info + first shuffle [1 -1 0]
+;    ;;set current-info random-normal 0 (d ^ 2)
+;
+;    ifelse ticks > 500 and ticks < 1000
+;    [
+;      set current-reddit random-normal 0.1 (d ^ 2)
+;      ;set current-info random-normal 0 (d ^ 2)
+;    ]
+;    [
+;      set current-reddit random-normal 0 (d ^ 2)
+;      ;set current-info random-normal 0 (d ^ 2)
+;    ]
+;
+;    ifelse ticks > 495 and ticks < 500
+;    [
+;      ;set current-reddit random-normal 0.01 (d ^ 2)
+;      set current-info random-normal -0.1 (d ^ 2)
+;    ]
+;    [
+;      ;set current-reddit random-normal 0 (d ^ 2)
+;      set current-info random-normal 0 (d ^ 2)
+;    ]
+;
+;    ;;set current-reddit current-reddit + first shuffle [1 1 1 1 1 -1 -1 -1 -1 0 0 0 0 0 0 0 0 0 0]
   ]
 end
 
@@ -171,7 +187,7 @@ set previous-price current-price
 set g ((z / (count traders)) / lamda)  ;; this is correct
   ;; g is the price impact function which is a positive functin?
   ;; ln ( p_t / p_{t-1 } ) = g -> e^g * p_{t-1} = p(t) ?
-set current-price exp g * previous-price
+set current-price max list (exp g * previous-price) 1
 end
 
 to calculate-return
@@ -331,7 +347,7 @@ num-traders
 num-traders
 0
 2000
-1000.0
+100.0
 1
 1
 NIL
@@ -361,7 +377,7 @@ SLIDER
 %-change
 0
 1
-0.2
+0.0
 .01
 1
 NIL
@@ -430,7 +446,7 @@ lamda
 lamda
 0
 100
-40.0
+75.0
 1
 1
 NIL
@@ -493,8 +509,8 @@ NIL
 NIL
 0.0
 10.0
-0.0
-10.0
+-0.1
+0.1
 true
 false
 "" ""
@@ -544,7 +560,7 @@ redditRatio
 redditRatio
 0
 1
-0.05
+0.3
 .01
 1
 NIL
@@ -559,7 +575,7 @@ redditImportance
 redditImportance
 0
 1
-0.1
+0.5
 .01
 1
 NIL
@@ -571,7 +587,7 @@ INPUTBOX
 1064
 79
 maxTicks
-1500.0
+2000.0
 1
 0
 Number
@@ -899,6 +915,53 @@ NetLogo 6.2.2
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
+<experiments>
+  <experiment name="project_data" repetitions="1" runMetricsEveryStep="true">
+    <setup>setup</setup>
+    <go>go</go>
+    <enumeratedValueSet variable="maxTicks">
+      <value value="2000"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="redditRatio">
+      <value value="0"/>
+      <value value="0.05"/>
+      <value value="0.1"/>
+      <value value="0.2"/>
+      <value value="0.3"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="d">
+      <value value="0.036"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="write-output?">
+      <value value="true"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="paper?">
+      <value value="false"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="redditImportance">
+      <value value="0"/>
+      <value value="0.1"/>
+      <value value="0.2"/>
+      <value value="0.5"/>
+      <value value="0.7"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="useBothFeeds?">
+      <value value="true"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="newInfo?">
+      <value value="true"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="num-traders">
+      <value value="100"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="%-change">
+      <value value="0"/>
+    </enumeratedValueSet>
+    <enumeratedValueSet variable="lamda">
+      <value value="75"/>
+    </enumeratedValueSet>
+  </experiment>
+</experiments>
 @#$#@#$#@
 @#$#@#$#@
 default

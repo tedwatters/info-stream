@@ -281,7 +281,7 @@ This agent based model can be represented by a template chain graph shown in ~\a
 	\node[squarednode, align=center]        (class)       [left=of action] {$\rho_{i}$};
 	\node[resultnode, align=center]        (main)       [right=of price] {$\epsilon_{main,t}$};				
 	\node[resultnode, align=center]        (reddit)       [right=of main] {$\epsilon_{reddit,t}$};
-	\node[squarednode, align=center]      (threshold)     [below=of reddit]      {$\theta_{i}(t)$};					
+	\node[squarednode, align=center]      (threshold)     [below=of class]      {$\theta_{i}$};					
 %	%Lines
 	\draw[-{Latex[width=3mm]}] (importance.south) -- (action.north);
 	\draw[-{Latex[width=3mm]}] (proportion.south) -- (class.north) ;
@@ -289,12 +289,12 @@ This agent based model can be represented by a template chain graph shown in ~\a
 	\draw[-{Latex[width=3mm]}] (main.west) -- (action.east);
 	\draw[-{Latex[width=3mm]}] (reddit.south) -- (action.east);
 	\draw[-{Latex[width=3mm]}] (lambda.south) -- (price.north);
-	\draw[-{Latex[width=3mm]}] (threshold.west) -- (action.east);
+	\draw[-{Latex[width=3mm]}] (threshold.north) -- (action.south);
 	\draw[-{Latex[width=3mm]}] (action.north) -- (price.south);
 	\draw [->] (price.90) arc (0:264:20mm);
 %	%rectangle
-	\draw[red,thick,dotted] ($(price.north west)+(-1,2)$)  rectangle ($(threshold.south east)+(1,-6)$);
-	\draw[blue,thick,dotted] ($(class.north west)+(-4,4)$)  rectangle ($(threshold.south east)+(4,-8)$);
+	\draw[red,thick,dotted] ($(price.north west)+(-2,2)$)  rectangle ($(reddit.south east)+(2,-12)$);
+	\draw[blue,thick,dotted] ($(class.north west)+(-2,2)$)  rectangle ($(action.south east)+(2,-12)$);
 
 	\end{tikzpicture}\\
 	\caption{Template Chain Graph}

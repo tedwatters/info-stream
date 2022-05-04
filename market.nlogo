@@ -575,7 +575,7 @@ redditImportance
 redditImportance
 0
 1
-0.5
+0.1
 .01
 1
 NIL
@@ -587,7 +587,7 @@ INPUTBOX
 1064
 79
 maxTicks
-2000.0
+10000.0
 1
 0
 Number
@@ -920,7 +920,7 @@ NetLogo 6.2.2
     <setup>setup</setup>
     <go>go</go>
     <enumeratedValueSet variable="maxTicks">
-      <value value="2000"/>
+      <value value="10000"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="redditRatio">
       <value value="0"/>

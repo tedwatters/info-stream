@@ -23,14 +23,17 @@
 # Initiation
 
 ################
+library(stringr)
+
 
 # Key assumptions
 set.seed(42)
 
-alpha <- 0.6
-beta_val <- 0.6
-lambda <- 15
+alpha <- 0.2
+beta_val <- 0.2
+lambda <- 75
 sd <- 0.036
+price <- 100
 
 trader_names <- vector(length=100)
 for (itr in seq(1:100)){
@@ -46,11 +49,14 @@ generate_trader_df <- function(alpha,trader_names){
 }
 
 # This function generates initial tick df (i.e. the time series)
-generate_tick_df <- function(sd,trader_names){
-  info_stream_main <- rnorm(n=1,mean=0,sd=sd)
-  info_stream_reddit <- rnorm(n=1,mean=0,sd=sd)
+generate_tick_df <- function(
+  sd,
+  trader_names,
+  info_stream_main = rnorm(n=1,mean=0,sd=sd),
+  info_stream_reddit = rnorm(n=1,mean=0,sd=sd),
+  price = 100
+  ){
   vol <- 0
-  price <- 100
   buys <- 0
   sells <- 0
   df_tick <- data.frame(info_stream_reddit,info_stream_main,vol,price)
@@ -254,36 +260,244 @@ gibbs_sample_procedure <- function(gibbs_sample_step,
 # Each tick df has a randomly generated info_stream starting point
 # Each trader df has a randomly generated threshold and class for each trader
 # Generate 10 of them to see how sensitive things are to starting point
-runs <- 5000
-start_points <- 10
+runs <- 1000
+main = seq(from = -0.5, to = 0.5, by = 0.5)*sd
+reddit = seq(from = 0.5, to = -0.5, by = -0.5)*sd
+start_points <- length(main)
+alpha_list <- c(0,0.05,0.1,0.2,0.3)
+beta_list <- c(0,0.1,0.2,0.5,0.7)
+best_start_points <- vector(length=length(alpha_list)*length(beta_list))
 
-price_matrix <- matrix(nrow=start_points,ncol=runs)
-vol_matrix <- matrix(nrow=start_points,ncol=runs)
-buys_matrix <- matrix(nrow=start_points,ncol=runs)
-sells_matrix <- matrix(nrow=start_points,ncol=runs)
+count_main <- 1
+for (alpha_par in alpha_list){
+  for (beta_par in beta_list){
+    alpha <- alpha_par
+    beta_val <- beta_par
+    
+    price_matrix <- matrix(nrow=start_points^2,ncol=runs)
+    vol_matrix <- matrix(nrow=start_points^2,ncol=runs)
+    buys_matrix <- matrix(nrow=start_points^2,ncol=runs)
+    sells_matrix <- matrix(nrow=start_points^2,ncol=runs)
+    
+    count <- 1
+    for (itr in seq(1:start_points)){
+      for (itr2 in seq(1:start_points)){
+        df_tick <- generate_tick_df(sd,
+                                    trader_names,
+                                    info_stream_main = main[itr],
+                                    info_stream_reddit = reddit[itr2],
+                                    price = price
+        )
+        df_trader <- generate_trader_df(alpha,trader_names)
+        
+        df_tick <- gibbs_sample_procedure(gibbs_sample_step,  
+                                          df_tick,
+                                          df_trader,
+                                          trader_names,
+                                          beta_val,
+                                          lambda,
+                                          sd,
+                                          update_price,
+                                          update_info_stream_main,
+                                          update_info_stream_reddit,
+                                          runs)
+        price_matrix[count,] <- df_tick$price
+        vol_matrix[count,] <- df_tick$vol
+        buys_matrix[count,] <- df_tick$buys
+        sells_matrix[count,] <- df_tick$sells
+        cat("on itr: ",count,"\n")
+        count <- count + 1
+      }
+      }
+    
+    
+    # Check if mean is within 20% of starting price. If so, call stable.
+    stable_measure = vector(length=start_points^2)
+    mean_dif = vector(length=start_points^2)
+    count <- 1
+    for (itr in seq(1:start_points^2)){
 
-for (itr in seq(1:start_points)){
-  df_tick <- generate_tick_df(sd,trader_names)
-  df_trader <- generate_trader_df(alpha,trader_names)
-  
-  df_tick <- gibbs_sample_procedure(gibbs_sample_step,  
-                         df_tick,
-                         df_trader,
-                         trader_names,
-                         beta_val,
-                         lambda,
-                         sd,
-                         update_price,
-                         update_info_stream_main,
-                         update_info_stream_reddit,
-                         runs)
-  price_matrix[itr,] <- df_tick$price
-  vol_matrix[itr,] <- df_tick$vol
-  buys_matrix[itr,] <- df_tick$buys
-  sells_matrix[itr,] <- df_tick$sells
-  cat("on itr: ",itr,"\n")
+      mean_price <- mean(price_matrix[itr,])
+      mean_dif[itr] <- abs(price - mean_price)/price
+      if (mean_dif[itr] < 0.2){
+        stable_measure[count] <- "black"
+      }
+      else{
+        stable_measure[count] <- "red"
+      }
+      count <- count + 1
+    }
+    
+    best_start_points[count_main] <- which.min(mean_dif)
+    
+    # Make legend
+    legend_entries = vector(length=start_points^2)
+    count <- 1
+    for (itr in seq(1:start_points)){
+      for (itr2 in seq(1:start_points)){
+        
+      legend_entries[count] <- paste0("Main: ",main[itr],",Reddit: ",reddit[itr2])
+      count <- count + 1
+      }
+    }
+    
+    png(file=paste0("./plots/trace",alpha,beta_val,".png"),
+        width=600, height=350)
+    # Trace plots
+    plot(
+      seq(1:runs),
+      price_matrix[1,],
+      type="l",
+      ylim=c(0,200),
+      ylab = "price",
+      xlab = "iteration",
+      main = paste0("Trace Plot for alpha=",alpha,", beta=",beta_val),
+      col = stable_measure[1]
+    )
+    for (itr in seq(2:start_points^2)){
+      lines(seq(1:runs),price_matrix[itr,],col=stable_measure[itr])
+    }
+    legend("topleft",legend=legend_entries,col=stable_measure,lty = 1)
+    dev.off()
+    
+    
+    # Cumulative Sum
+    price_cumulative_sum = matrix(nrow=start_points^2,ncol=runs)
+    for (itr in seq(1:start_points^2)){
+      for (itr2 in seq(1:runs)){
+        if (itr2 == 1){
+          price_cumulative_sum[itr,itr2] <- price_matrix[itr,itr2] - price
+        } else{
+          price_cumulative_sum[itr,itr2] <- price_matrix[itr,itr2] + price_cumulative_sum[itr,itr2-1] - price
+        }
+      }
+    }
+    png(file=paste0("./plots/sum",alpha,beta_val,".png"),
+        width=600, height=350)
+    plot(
+      seq(1:runs),
+      price_cumulative_sum[1,],
+      type="l",
+      ylim=c(-10000,10000),
+      ylab = "price",
+      xlab = "iteration",
+      main = paste0("Cumulative Sum Plot for alpha=",alpha,", beta=",beta_val),
+      col = stable_measure[1]
+    )
+    for (itr in seq(2:start_points^2)){
+      lines(seq(1:runs),price_cumulative_sum[itr,],col=stable_measure[itr])
+    }
+    legend("topleft",legend=legend_entries,col=stable_measure,lty = 1)
+    dev.off()
+    
+    
+    # Autocorrelation
+    count <- 1
+    for (itr in seq(1:start_points)){
+      for (itr2 in seq(1:start_points)){
+        
+      png(file=paste0("./plots/acf",alpha,beta_val,count,".png"),
+          width=600, height=350)
+      acf(
+        price_matrix[count,],
+        lag.max=100,
+        main = paste0(
+          "Trace Plot for alpha=",
+          alpha,
+          ", beta=",
+          beta_val,
+          ", Main: ",
+          main[itr],
+          ",Reddit: ",
+          reddit[itr2]
+        )
+      )
+      dev.off()
+      count < count + 1
+    }
+    
+    }
+    count_main <- count_main+1
+  }
 }
 
+write.csv(best_start_points,'./plots/best_starting_points.csv')
 
 
+# Now that we have some graphs and the best starting points...
+# Start doing the long runs to see if the distribtuion matches the ABM output.
+
+best_start_points <- read.csv('./plots/best_starting_points.csv')
+
+
+burn <- 500
+runs <- 10000
+
+count_main <-1
+for (alpha_par in alpha_list){
+  for (beta_par in beta_list){
+    
+    alpha <- alpha_par
+    beta_val <- beta_par
+    cat("alpha: ",alpha,"beta: ",beta_val,"\n")
+    
+    df_tick <- generate_tick_df(sd,
+                                trader_names,
+                                info_stream_main = main[max(floor(best_start_points[count_main,"x"]/length(main)),1)],
+                                info_stream_reddit = reddit[best_start_points[count_main,"x"] %% length(main)+1],
+                                price = price
+    )
+    df_trader <- generate_trader_df(alpha,trader_names)
+    
+    df_tick <- gibbs_sample_procedure(gibbs_sample_step,  
+                                      df_tick,
+                                      df_trader,
+                                      trader_names,
+                                      beta_val,
+                                      lambda,
+                                      sd,
+                                      update_price,
+                                      update_info_stream_main,
+                                      update_info_stream_reddit,
+                                      burn+runs)
+    
+    df_tick <- df_tick[burn:(burn+runs),]
+    png(file=paste0("./plots/histogramMCMC",alpha,beta_val,".png"),
+        width=600, height=350)
+    hist(
+      df_tick$price,
+      freq = FALSE,
+      main = paste0("Density of MCMC, Alpha: ",alpha,", Beta: ",beta_val),
+      xlab = "Price",
+      xlim = c(0,200)
+    )
+    dev.off()
+    
+    count_main <- count_main+1
+  }
+}
+
+# Now generate histograms for the ABM:
+# get list of the data files
+file_names <- list.files(path = "./data",pattern="tick", full.names = TRUE)
+
+# loop through the files generating plots
+for (itr in seq(1:length(file_names))){
+  # read the file
+  df_tick <- read.csv(file_names[itr])
+  
+  # extract the scenario name
+  scenario_name <- str_trim(sub("*.csv","",sub(".*RR","RR",file_names[itr])))
+  
+  png(file=paste0("./plots/histogramABM",scenario_name,".png"),
+      width=600, height=350)
+  hist(
+    df_tick$current.price,
+    freq = FALSE,
+    main = paste0("Density of ABM: ", scenario_name),
+    xlab = "Price",
+    xlim = c(0,200)
+  )
+  dev.off()
+}
 

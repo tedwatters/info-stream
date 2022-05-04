@@ -104,7 +104,19 @@ decision_function <- function(rho,betar,er,em,theta){
   } else {
     ans2 <- 0
   }
-  return( greta_array(ans2) )
+  
+  if(ans2==-1){
+    return(greta_array(c(1,0,0)))
+  }
+  if(ans2==0){
+    return(greta_array(c(0,1,0)))
+  }
+  if(ans2==1){
+    return(greta_array(c(0,0,1)))
+  }
+  
+  
+  # return( greta_array(ans2) )
 }
 
 # loop through files to generate inferences
@@ -132,8 +144,8 @@ for (itr in seq(1:length(file_names))){
   # make the graph
   graph = dag_create() %>%
     dag_node("Decision","phi_o",
-             rhs = uniform(-1,1),
-             # rhs = uniform(phi[tp,ip]-0.1,phi[tp,ip]+0.1),
+             # rhs = uniform(-1,1),
+             rhs = normal(10,10),
              data = trader_tick_phi,
              keepAsDF = TRUE
     ) %>%
@@ -171,7 +183,7 @@ for (itr in seq(1:length(file_names))){
              rhs = uniform(0,0.5),
              child="rho") %>%
     dag_plate("Trader","ip",
-              nodeLabels = c("rho","theta","i","phi","phi_o","z"),
+              nodeLabels = c("rho","theta","i","phi","z","phi_o"),
               data = trader_decisions$variable) %>%
     dag_plate("Tick Plate","tp",
               nodeLabels = c("epsilon_reddit","epsilon_main","t","phi","phi_o"),
@@ -187,7 +199,18 @@ for (itr in seq(1:length(file_names))){
 
   
   gretaCode = graph %>% dag_greta(mcmc=FALSE)
-  drawsDF = graph %>% dag_greta()
+  # drawsDF = graph %>% dag_greta()
+  gretaCode <- str_replace(
+    gretaCode, 
+    "mcmc\\(gretaModel\\)", 
+    "mcmc\\(gretaModel, n_samples = 100000\\)"
+    )
+  gretaCode <- str_replace(
+    gretaCode, 
+    "normal\\(mean = 10, sd = 10, dim = c\\(ip_dim,tp_dim\\)\\)", 
+    "mixture\\(normal\\(-1,0.1\\), normal\\(0,0.1\\), normal\\(1,0.1\\),weights=phi\\)"
+    )
+  eval(parse(text=gretaCode))
   
   # png(file=paste0("./plots/param_est_",scenario_name,".png"))
   plot_p <- drawsDF %>% dagp_plot() 
@@ -199,198 +222,37 @@ for (itr in seq(1:length(file_names))){
   write.csv(drawsDF,paste0('./plots/drawsDF',scenario_name,'.csv'))
 }
 
+# Reads from csvs
+# get list of the data files
+file_names <- list.files(path = "./plots",pattern="drawsDF", full.names = TRUE)
 
+# loop through files to generate inferences
+for (itr in seq(1:length(file_names))){
+  # read the file
+  df_par <- read.csv(file_names[itr])
+  
+  # extract the scenario name
+  scenario_name <- str_trim(sub("*.csv","",sub(".*RR","RR",file_names[itr])))
+  
+  df_par_subset_alpha<- data.frame(df_par$alpha * 2)
+  colnames(df_par_subset_alpha) <- paste0("alpha_",scenario_name)
+  df_par_subset_betar<- data.frame(df_par$betar)
+  colnames(df_par_subset_betar) <- paste0("betar_",scenario_name)
 
+  if (itr == 1){
+    df_par_summary_alpha <- df_par_subset_alpha
+    df_par_summary_betar <- df_par_subset_betar
+    
+  } else {
+    df_par_summary_alpha <- cbind(df_par_summary_alpha,df_par_subset_alpha)
+    df_par_summary_betar <- cbind(df_par_summary_betar,df_par_subset_betar)
+  }
+}
 
+plot_alpha <- drawsDF %>% dagp_plot() 
+plot_alpha$labels$title <- "Summary of Alpha"
+ggsave(paste0("./plots/alpha_summary.png"))
 
-#test
-# trader_decisions$value <- abs(trader_decisions$value)
-# trader_decisions$variable <- gsub("\\D+","",trader_decisions$variable)
-# trader_decisions <- transform(trader_decisions, variable = as.numeric(variable))
-# trader_decisions <- transform(trader_decisions, ticks = as.character(ticks))
-# decision_test <- function(x,z){
-#   ans <- ceiling(x-z)
-# }
-
-
-
-# rho_function <- function(alpha){
-#   distribution(y) <- alpha
-# }
-# 
-# alpha <- beta(2,2)
-# marginalise(rho_function,bernoulli(alpha))
-# 
-# weights <- uniform(0,1,dim=2)
-# rates <- beta(0.05,0.05)
-# distribution(rho) <- mixture(
-#   bernoulli(rates),
-#   binomial(1,0),
-#   weights = weights
-# )
-# 
-# start_rho <- as_data(rbern(100,0.2))
-
-# beta_marg_pdf <- function(a,b,rho_s){
-#   ans <- beta(a+sum(rho_s),b+length(rho_s)-sum(rho_s))/beta(a,b)
-#   return(ans)
-# }
-# 
-# blerp <- function(a,b){
-#   return(paste0("normal(",a,",",b,")"))
-# }
-
-# graph = dag_create() %>%
-#   # dag_node("Price","p",
-#   #          data = trader_decisions$current.price) %>%
-#   dag_node("Trader Decision","phi",
-#            # rhs = decision_function(rho,betar,epsilon_reddit,epsilon_main,theta),
-#            rhs = normal(theta,0),
-#            data = trader_decisions$value) %>%
-#   # dag_node(descr =  "Reddit Importance Factor",label = "betar",
-#   #          rhs = beta(2,2),
-#   #          child = "phi") %>%
-#   dag_node(descr = "Trader Classification",label = "rho",
-#            rhs = beta(alpha,2),
-#            child = "phi") %>%
-#   dag_node(descr = "Proportion of Reddit Traders",label = "alpha",
-#            rhs = beta(2,2),
-#            child = "rho") %>%
-#   dag_node(descr = "Trader Threshold", label = "theta",
-#            rhs = beta(2,2),
-#            child = "phi") %>%
-#   dag_node("Info Main","epsilon_main",
-#            data = trader_decisions$current.info,
-#            child = "phi") %>%
-#   dag_node("Info Reddit","epsilon_reddit",
-#            data = trader_decisions$current.reddit,
-#            child = "phi") %>%
-#   dag_node("Tick","t",
-#            data = trader_decisions$ticks,
-#            child="phi") %>%
-#   dag_node("Trader","i",
-#            data = trader_decisions$variable,
-#            child="phi") %>%
-#   dag_plate("Trader","ip",
-#             nodeLabels = c("rho","theta","phi","i"),
-#             data = trader_decisions$variable) %>%
-#   dag_plate("Tick Plate","tp",
-#             nodeLabels = c("epsilon_reddit","epsilon_main","phi","t"),
-#             data = trader_decisions$tick)
-# 
-# graph %>% dag_render()
-# 
-# gretaCode = graph %>% dag_greta(mcmc=FALSE)
-# # Not run:
-# # default functionality returns a data frame
-# # below requires Tensorflow installation
-# png("./plots/ex_graph.png")
-# drawsDF = graph %>% dag_greta()
-# dev.off()
-# 
-# 
-#   
-# 
-# # multiple plate example
-# library(dplyr)
-# poolTimeGymDF = gymDF %>%
-#   mutate(stretchType = ifelse(yogaStretch == 1,
-#                               "Yoga Stretch",
-#                               "Traditional")) %>%
-#   group_by(gymID,stretchType,yogaStretch) %>%
-#   summarize(nTrialCustomers = sum(nTrialCustomers),
-#             nSigned = sum(nSigned))
-# graph = dag_create() %>%
-#   dag_node("Cust Signed","k",
-#            rhs = binomial(n,p),
-#            data = poolTimeGymDF$nSigned) %>%
-#   dag_node("Probability of Signing","p",
-#            rhs = beta(2,2),
-#            child = "k") %>%
-#   dag_node("Trial Size","n",
-#            data = poolTimeGymDF$nTrialCustomers,
-#            child = "k") %>%
-#   dag_plate("Yoga Stretch","x",
-#             nodeLabels = c("p"),
-#             data = poolTimeGymDF$stretchType,
-#             addDataNode = TRUE) %>%
-#   dag_plate("Observation","i",
-#             nodeLabels = c("x","k","n")) %>%
-#   dag_plate("Gym","j",
-#             nodeLabels = "p",
-#             data = poolTimeGymDF$gymID,
-#             addDataNode = TRUE)
-# graph %>% dag_render()
-# 
-# graph = dag_create() %>%
-#   dag_node("Get Card","y",
-#            rhs = bernoulli(theta),
-#            data = carModelDF$getCard) %>%
-#   dag_node(descr = "Card Probability by Car",label = "theta",
-#            rhs = beta(2,2),
-#            child = "y") %>%
-#   dag_node("Car Model","x",
-#            data = carModelDF$carModel,
-#            child = "y") %>%
-#   dag_plate("Car Model","x",
-#             data = carModelDF$carModel,
-#             nodeLabels = "theta")
-# graph %>% dag_render()
-# 
-# schools_dat <- data.frame(y = c(28, 8, -3, 7, -1, 1, 18, 12),
-#                           sigma = c(15, 10, 16, 11, 9, 11, 10, 18), schoolName = paste00("School",1:8))
-# graph = dag_create() %>%
-#   dag_node("Treatment Effect","y",
-#            rhs = normal(theta, sigma),
-#            data = schools_dat$y) %>%
-#   dag_node("Std Error of Effect Estimates","sigma",
-#            data = schools_dat$sigma,
-#            child = "y") %>%
-#   dag_node("Exp. Treatment Effect","theta",
-#            child = "y",
-#            rhs = avgEffect + schoolEffect) %>%
-#   dag_node("Pop Treatment Effect","avgEffect",
-#            child = "theta",
-#            rhs = normal(0,30)) %>%
-#   dag_node("School Level Effects","schoolEffect",
-#            rhs = normal(0,30),
-#            child = "theta") %>%
-#   dag_plate("Observation","i",nodeLabels = c("sigma","y","theta")) %>%
-#   dag_plate("School Name","school",
-#             nodeLabels = "schoolEffect",
-#             data = schools_dat$schoolName,
-#             addDataNode = TRUE)
-# graph %>% dag_render()
-# ## Not run:
-# # below requires Tensorflow installation
-# graph %>% dag_greta(mcmc=TRUE)
-# DrawsDF %>% dagp_plot()
-# 
-# 
-# epsilon_main <- as_data(trader_decisions$current.info)       #DATA
-# epsilon_reddit <- as_data(trader_decisions$current.reddit)   #DATA
-# t <- as.factor(trader_decisions$ticks)                       #DIM
-# i <- as.factor(trader_decisions$variable)                    #DIM
-# phi <- as_data(trader_decisions$value)                       #DATA
-# i_dim <- length(unique(i))                                   #DIM
-# t_dim <- length(unique(t))                                   #DIM
-# alpha  <- beta(shape1 = 2, shape2 = 2)                     #PRIOR
-# theta  <- beta(shape1 = 2, shape2 = 2, dim = i_dim)       #PRIOR
-# rho    <- beta(shape1 = alpha, shape2 = 2, dim = i_dim)   #PRIOR
-# distribution(phi) <- normal(mean = theta[i], sd = 0, dim = c(i_dim,t_dim))   #LIKELIHOOD
-# gretaModel  <- model(rho,alpha,theta)   #MODEL
-# meaningfulLabels(graph)
-# draws       <- mcmc(gretaModel)              #POSTERIOR
-# drawsDF     <- replaceLabels(draws) %>% as.matrix() %>%
-#   dplyr::as_tibble()           #POSTERIOR
-# tidyDrawsDF <- drawsDF %>% addPriorGroups()  #POSTERIOR
-# 
-# 
-# 
-# x <- runif(100)
-# y <- vector(length=length(x)*1000)
-# y <- matrix(data=y,nrow=length(x))
-# for (itr in seq(1:length(x))){
-#   y[itr,] <- rbinom(1000,1,x[itr])
-# }
-# hist(y)
+plot_betar <- drawsDF %>% dagp_plot() 
+plot_betar$labels$title <- "Summary of Beta"
+ggsave(paste0("./plots/beta_summary.png"))

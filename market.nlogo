@@ -95,10 +95,7 @@ to go
   calculate-price
   calculate-return
   set vol sum [abs my-action] of traders
-  ;let t int (count traders * %-change)
-;  ask n-of (count traders * %-change) traders [change-threshold]
   if not write-output? [do-plots]
-  ;ask traders [move-around]
   if write-output? [do-output]
   tick
   if ticks > maxTicks [set write-output? false file-close-all stop]
@@ -130,31 +127,6 @@ to create-information
         set current-info current-info + random-normal 0 (d ^ 2)
       ]
     ]
-
-;    ;;set current-info current-info + first shuffle [1 -1 0]
-;    ;;set current-info random-normal 0 (d ^ 2)
-;
-;    ifelse ticks > 500 and ticks < 1000
-;    [
-;      set current-reddit random-normal 0.1 (d ^ 2)
-;      ;set current-info random-normal 0 (d ^ 2)
-;    ]
-;    [
-;      set current-reddit random-normal 0 (d ^ 2)
-;      ;set current-info random-normal 0 (d ^ 2)
-;    ]
-;
-;    ifelse ticks > 495 and ticks < 500
-;    [
-;      ;set current-reddit random-normal 0.01 (d ^ 2)
-;      set current-info random-normal -0.1 (d ^ 2)
-;    ]
-;    [
-;      ;set current-reddit random-normal 0 (d ^ 2)
-;      set current-info random-normal 0 (d ^ 2)
-;    ]
-;
-;    ;;set current-reddit current-reddit + first shuffle [1 1 1 1 1 -1 -1 -1 -1 0 0 0 0 0 0 0 0 0 0]
   ]
 end
 
@@ -183,10 +155,7 @@ end
 
 to calculate-price
 set previous-price current-price
-;;set current-price sum [my-action] of traders
-set g ((z / (count traders)) / lamda)  ;; this is correct
-  ;; g is the price impact function which is a positive functin?
-  ;; ln ( p_t / p_{t-1 } ) = g -> e^g * p_{t-1} = p(t) ?
+set g ((z / (count traders)) / lamda)
 set current-price max list (exp g * previous-price) 1
 end
 
@@ -347,7 +316,7 @@ num-traders
 num-traders
 0
 2000
-100.0
+200.0
 1
 1
 NIL
@@ -560,7 +529,7 @@ redditRatio
 redditRatio
 0
 1
-0.3
+0.0
 .01
 1
 NIL
@@ -575,7 +544,7 @@ redditImportance
 redditImportance
 0
 1
-0.1
+0.0
 .01
 1
 NIL
@@ -587,7 +556,7 @@ INPUTBOX
 1064
 79
 maxTicks
-10000.0
+2000.0
 1
 0
 Number
@@ -920,14 +889,12 @@ NetLogo 6.2.2
     <setup>setup</setup>
     <go>go</go>
     <enumeratedValueSet variable="maxTicks">
-      <value value="10000"/>
+      <value value="2000"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="redditRatio">
       <value value="0"/>
-      <value value="0.05"/>
       <value value="0.1"/>
-      <value value="0.2"/>
-      <value value="0.3"/>
+      <value value="0.6"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="d">
       <value value="0.036"/>
@@ -941,8 +908,6 @@ NetLogo 6.2.2
     <enumeratedValueSet variable="redditImportance">
       <value value="0"/>
       <value value="0.1"/>
-      <value value="0.2"/>
-      <value value="0.5"/>
       <value value="0.7"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="useBothFeeds?">
@@ -952,7 +917,7 @@ NetLogo 6.2.2
       <value value="true"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="num-traders">
-      <value value="100"/>
+      <value value="200"/>
     </enumeratedValueSet>
     <enumeratedValueSet variable="%-change">
       <value value="0"/>

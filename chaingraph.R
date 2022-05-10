@@ -52,72 +52,45 @@ for (itr in seq(1:length(file_names))){
 }
 
 # define the function that we know how traders make decisions
-decision_function <- function(rho,betar,er,em,theta){
-  
-  # trigger if reddit trader will take action
-  reddit_trigger <- function(rho,betar,er,em,theta){
-    if ( isTRUE( rho>0.5) ){
-      if ((betar*er+(1-betar)*em) < -1 * theta ){
-        ans <- TRUE
-      } else if ((betar*er+(1-betar)*em) > theta){
-        ans <- TRUE
-      } else {
-        ans <- FALSE
-      } 
-    } else {
-      ans <- FALSE
-    }
+decision_function <- function(rho_val,betar_val,er_val,em_val,theta_val){
+  cat("rho: ",dim(rho_val),"\n")
+  cat("betar: ",dim(betar_val),"\n")
+  cat("er: ",dim(er_val),"\n")
+  cat("theta: ",dim(theta_val),"\n")
+
+    buy_signal <- round(
+      # if reddit buy
+      round(rho_val) * ceiling((betar_val*er_val+(1-betar_val)*em_val) - theta_val)
+      # if main buy
+      + (-round(rho_val-1) * ceiling(em_val - theta_val))
+    )
+    
+    sell_signal <- round(
+      # if reddit sell
+      round(rho_val) * -floor((betar_val*er_val+(1-betar_val)*em_val) - theta_val)
+      # if main sell
+      + (-round(rho_val-1) * -floor(em_val - theta_val))
+    )
+    
+    nothing_signal <- 1 - buy_signal - sell_signal
+    
+    ans <- t(
+      greta_array(
+      c(buy_signal,nothing_signal,sell_signal),
+      dim = c(length(buy_signal),3)
+      )
+    )
+    
+    ans <- apply(ans,1,"sum")
+    
+    cat("ans: ",dim(ans),"\n")
+    
+    ans <- mixture(normal(1,0.01),normal(0,0.1),normal(-1,0.1),weights=ans)
+    
     return(ans)
     
-  }
-  
-  # trigger if main user will take action
-  main_trigger <- function(rho,em,theta){
-    if ( isTRUE(rho<0.5)){
-      if (em < -1 * theta){
-        ans <- TRUE
-      } else if (em > 1 * theta){
-        ans <- TRUE
-      } else {
-        ans <- FALSE
-      } 
-    } else {
-      ans <- FALSE
-    }
-    return(ans)
-    
-  }
-  
-  # set trading action based on triggers and thresholds
-  if (reddit_trigger(rho,betar,er,em,theta) == TRUE){
-    if ((betar*er+(1-betar)*em) > 0){
-      ans2 <- 1
-    } else {
-      ans2 <- -1
-    }
-  } else if (main_trigger(rho,em,theta) == TRUE){
-    if (em > 0){
-      ans2 <- 1
-    } else {
-      ans2 <- -1
-    }
-  } else {
-    ans2 <- 0
-  }
-  
-  if(ans2==-1){
-    return(greta_array(c(1,0,0)))
-  }
-  if(ans2==0){
-    return(greta_array(c(0,1,0)))
-  }
-  if(ans2==1){
-    return(greta_array(c(0,0,1)))
-  }
-  
-  
-  # return( greta_array(ans2) )
 }
+
 
 # loop through files to generate inferences
 for (itr in seq(1:length(file_names))){
@@ -143,23 +116,18 @@ for (itr in seq(1:length(file_names))){
   
   # make the graph
   graph = dag_create() %>%
-    dag_node("Decision","phi_o",
-             # rhs = uniform(-1,1),
-             rhs = normal(10,10),
-             data = trader_tick_phi,
-             keepAsDF = TRUE
-    ) %>%
     dag_node("Trader Decision","phi",
              rhs = decision_function(rho[ip],betar,epsilon_reddit[tp],epsilon_main[tp],theta[ip]),
              # rhs = uniform(-1,1),
-             # data = trader_decisions$value,
-             dec = TRUE,
-             child = "phi_o") %>%
+             data = trader_decisions$value
+             # dec = TRUE
+             # child = "phi_o"
+             ) %>%
     dag_node(descr = "Trader Classification",label = "rho",
-             rhs = alpha+z,
+             rhs = normal(15,15),
              child = "phi") %>%
     dag_node(descr = "Proportion of Reddit Traders",label = "alpha",
-             rhs = uniform(0,0.5),
+             rhs = uniform(0,1),
              child = "rho") %>%
     dag_node(descr = "Trader Threshold", label = "theta",
              rhs = beta(2,2),
@@ -179,45 +147,61 @@ for (itr in seq(1:length(file_names))){
     dag_node("Trader","i",
              data = as.numeric(trader_decisions$variable),
              child="phi") %>%
-    dag_node("Rho_cut","z",
-             rhs = uniform(0,0.5),
-             child="rho") %>%
     dag_plate("Trader","ip",
-              nodeLabels = c("rho","theta","i","phi","z","phi_o"),
+              nodeLabels = c("rho","theta","i","phi"),
               data = trader_decisions$variable) %>%
     dag_plate("Tick Plate","tp",
-              nodeLabels = c("epsilon_reddit","epsilon_main","t","phi","phi_o"),
+              nodeLabels = c("epsilon_reddit","epsilon_main","t","phi"),
               data = trader_decisions$tick)
+
+  gretaCode = graph %>% dag_greta(mcmc=FALSE)
+
+  # Needed to set the number of runs from default
+  gretaCode <- str_replace(
+    gretaCode, 
+    "mcmc\\(gretaModel\\)", 
+    "mcmc\\(gretaModel, n_samples = 1000, warmup=25\\)"
+  )
+  
+  # # Needed to make mixture distribution for phi
+  # gretaCode <- str_replace(
+  #   gretaCode, 
+  #   "normal\\(mean = 10, sd = 10, dim = c\\(ip_dim,tp_dim\\)\\)", 
+  #   "mixture\\(normal\\(-1,0.5\\), normal\\(0,0.5\\), normal\\(1,0.5\\),weights=phi[ip][tp]\\)"
+  # )
+  
+  # Needed to make mixture distribution for rho
+  gretaCode <- str_replace(
+    gretaCode,
+    "normal\\(mean = 15, sd = 15, dim = ip_dim\\)", 
+    "mixture\\(normal\\(0, 0.5\\), normal\\(1, 0.5\\), weights = c\\(1 - alpha, alpha\\), dim = ip_dim\\)"
+  )
+  
+  # Needed to delete redundant operation and likelihood line
+  gretaCode <- str_replace(
+    gretaCode,
+    "phi    <- decision_function\\(rho_val = rho\\[ip\\], betar_val = betar, er_val = epsilon_reddit\\[tp\\], em_val = epsilon_main\\[tp\\], theta_val = theta\\[ip\\]\\)", 
+    ""
+  )
+
+  eval(parse(text=gretaCode))
+  
   if (itr == 1){
     graph %>% dag_render() %>%
       export_svg %>% charToRaw %>% 
       rsvg_png(paste0("./plots/graph",scenario_name,".png"))
-    # png(file=paste0("./plots/graph_",scenario_name,".png"))
-    # dag_render(graph = graph)
-    # dev.off()
-  }
 
+    
+    gretaModel %>% plot() %>%
+      export_svg %>% charToRaw %>% 
+      rsvg_png(paste0("./plots/GretaGraph",scenario_name,".png"))
+    
+  }
   
-  gretaCode = graph %>% dag_greta(mcmc=FALSE)
-  # drawsDF = graph %>% dag_greta()
-  gretaCode <- str_replace(
-    gretaCode, 
-    "mcmc\\(gretaModel\\)", 
-    "mcmc\\(gretaModel, n_samples = 100000\\)"
-    )
-  gretaCode <- str_replace(
-    gretaCode, 
-    "normal\\(mean = 10, sd = 10, dim = c\\(ip_dim,tp_dim\\)\\)", 
-    "mixture\\(normal\\(-1,0.1\\), normal\\(0,0.1\\), normal\\(1,0.1\\),weights=phi\\)"
-    )
-  eval(parse(text=gretaCode))
-  
-  # png(file=paste0("./plots/param_est_",scenario_name,".png"))
   plot_p <- drawsDF %>% dagp_plot() 
   plot_p$labels$title <- paste("Parameter Estimate: ",scenario_name)
   ggsave(paste0("./plots/paramEst",scenario_name,".png"))
-  # dagp_plot(drawsDF = drawsDF)
-  # dev.off()
+
   
   write.csv(drawsDF,paste0('./plots/drawsDF',scenario_name,'.csv'))
 }
@@ -249,10 +233,10 @@ for (itr in seq(1:length(file_names))){
   }
 }
 
-plot_alpha <- drawsDF %>% dagp_plot() 
+plot_alpha <- df_par_summary_alpha %>% dagp_plot() 
 plot_alpha$labels$title <- "Summary of Alpha"
-ggsave(paste0("./plots/alpha_summary.png"))
+ggsave(paste0("./plots/alphasummary.png"))
 
-plot_betar <- drawsDF %>% dagp_plot() 
+plot_betar <- df_par_summary_betar %>% dagp_plot() 
 plot_betar$labels$title <- "Summary of Beta"
-ggsave(paste0("./plots/beta_summary.png"))
+ggsave(paste0("./plots/betasummary.png"))

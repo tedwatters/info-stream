@@ -264,8 +264,8 @@ runs <- 1000
 main = seq(from = -0.5, to = 0.5, by = 0.5)*sd
 reddit = seq(from = 0.5, to = -0.5, by = -0.5)*sd
 start_points <- length(main)
-alpha_list <- c(0,0.05,0.1,0.2,0.3)
-beta_list <- c(0,0.1,0.2,0.5,0.7)
+alpha_list <- c(0,0.1,0.6)
+beta_list <- c(0,0.1,0.7)
 best_start_points <- vector(length=length(alpha_list)*length(beta_list))
 
 count_main <- 1
@@ -402,7 +402,7 @@ for (alpha_par in alpha_list){
         price_matrix[count,],
         lag.max=100,
         main = paste0(
-          "Trace Plot for alpha=",
+          "ACF Plot for alpha=",
           alpha,
           ", beta=",
           beta_val,
@@ -431,7 +431,7 @@ best_start_points <- read.csv('./plots/best_starting_points.csv')
 
 
 burn <- 500
-runs <- 10000
+runs <- 2000
 
 count_main <-1
 for (alpha_par in alpha_list){
